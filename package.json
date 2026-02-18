@@ -1,0 +1,28 @@
+{
+  "name": "growi-plugin-referenced",
+  "version": "1.0.0",
+  "description": "GROWI plugin to show pages that reference the current page",
+  "license": "MIT",
+  "keywords": ["growi", "growi-plugin"],
+  "type": "module",
+  "scripts": {
+    "build": "tsc && vite build"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.2",
+    "vite": "^5.3.2"
+  },
+  "growiPlugin": {
+    "schemaVersion": "4",
+    "types": ["script"]
+  }
+}
