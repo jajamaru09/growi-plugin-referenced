@@ -24,6 +24,8 @@ export function ReferencedList({ pagePath }: ReferencedListProps): React.ReactEl
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    console.log('[growi-plugin-referenced] ReferencedList mounted, pagePath:', pagePath);
+
     if (!pagePath) {
       setLoading(false);
       setError('ページパスを取得できませんでした。');
@@ -31,7 +33,9 @@ export function ReferencedList({ pagePath }: ReferencedListProps): React.ReactEl
     }
 
     const query = encodeURIComponent(`"${pagePath}"`);
-    fetch(`/_api/search?q=${query}&limit=50`, {
+    const url = `/_api/search?q=${query}&limit=50`;
+    console.log('[growi-plugin-referenced] fetching:', url);
+    fetch(url, {
       credentials: 'same-origin',
     })
       .then((res) => {
@@ -41,10 +45,12 @@ export function ReferencedList({ pagePath }: ReferencedListProps): React.ReactEl
         return res.json() as Promise<SearchResponse>;
       })
       .then((json) => {
+        console.log('[growi-plugin-referenced] search response:', json);
         if (!json.ok) {
-          throw new Error('検索APIがエラーを返しました。検索サービスが設定されているか確認してください。');
+          throw new Error('Search API returned an error. Please check if the search service is configured.');
         }
         const filtered = json.data.filter((p) => p.path !== pagePath);
+        console.log('[growi-plugin-referenced] filtered pages:', filtered);
         setPages(filtered);
       })
       .catch((err: Error) => {
@@ -56,21 +62,20 @@ export function ReferencedList({ pagePath }: ReferencedListProps): React.ReactEl
   }, [pagePath]);
 
   if (loading) {
-    return <div style={{ padding: '8px', color: '#666' }}>参照ページを読み込み中...</div>;
+    return <div style={{ padding: '4px 0', color: '#aaa', fontSize: '0.9em' }}>Loading...</div>;
   }
 
   if (error) {
-    return <div style={{ padding: '8px', color: '#c00' }}>エラー: {error}</div>;
+    return <div style={{ padding: '4px 0', color: '#c00', fontSize: '0.9em' }}>Error: {error}</div>;
   }
 
   if (pages.length === 0) {
-    return <div style={{ padding: '8px', color: '#666' }}>このページを参照しているページはありません。</div>;
+    return <div style={{ padding: '4px 0', color: '#aaa', fontSize: '0.9em' }}>There are no pages that refer to this page.</div>;
   }
 
   return (
-    <div style={{ padding: '8px' }}>
-      <p style={{ margin: '0 0 8px', fontWeight: 'bold' }}>このページを参照しているページ ({pages.length}件):</p>
-      <ul style={{ margin: 0, paddingLeft: '20px' }}>
+    <div style={{ padding: '4px 0' }}>
+      <ul style={{ margin: 0, paddingLeft: '1.5em' }}>
         {pages.map((page) => (
           <li key={page._id}>
             <a href={page.path}>{page.path}</a>
