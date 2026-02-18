@@ -6,11 +6,17 @@ interface PageData {
   updatedAt: string;
 }
 
+interface SearchResultItem {
+  data: PageData;
+  meta: object;
+}
+
 interface SearchResponse {
   ok: boolean;
-  data: PageData[];
+  data: SearchResultItem[];
   meta?: {
     total: number;
+    hitsCount: number;
   };
 }
 
@@ -49,7 +55,9 @@ export function ReferencedList({ pagePath }: ReferencedListProps): React.ReactEl
         if (!json.ok) {
           throw new Error('Search API returned an error. Please check if the search service is configured.');
         }
-        const filtered = json.data.filter((p) => p.path !== pagePath);
+        const filtered = json.data
+          .map((item) => item.data)
+          .filter((p) => p.path !== pagePath);
         console.log('[growi-plugin-referenced] filtered pages:', filtered);
         setPages(filtered);
       })
