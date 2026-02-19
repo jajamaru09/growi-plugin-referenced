@@ -189,33 +189,80 @@ export const referencedPlugin: Plugin = function () {
 
 ### client-entry.tsx（エントリポイント）
 
-activate() 内で2つのことを行う:
+**【動作確認済みパターン】** 以下2点が重要：
 
-1. remarkPlugins に referencedPlugin を登録
-2. MutationObserver で `div[data-growi-plugin-referenced]` を検知し ReactDOM でマウント
+1. `activate()` は `export` せず、**`window.pluginActivators[config.name]`** に登録する
+2. optionsGenerators は **`window.optionsGenerators` ではなく `growiFacade.markdownRenderer.optionsGenerators`** を使う
 
-**ページパスの取得方法:**
-`customGenerateViewOptions` の第1引数 `path` が現在のページパス。
-これを `data-page-path` 属性に埋め込むか、グローバル変数経由でReactコンポーネントに渡す。
+また view と preview の両方に remarkPlugin を登録すること。
 
 ```typescript
-// activate() 内
-let currentPagePath = '';
+import config from './package.json';  // package.json の name を使う
+import React from 'react';
+import ReactDOM from 'react-dom/client';
 
-optionsGenerators.customGenerateViewOptions = (path, ...rest) => {
-  currentPagePath = path;  // ← ここで取得
-  const options = original(path, ...rest);
-  options.remarkPlugins.push(referencedPlugin as any);
-  return options;
+declare const growiFacade: {
+  markdownRenderer?: {
+    optionsGenerators: {
+      customGenerateViewOptions: (path: string, options: Options, toc: Func) => ViewOptions;
+      generateViewOptions: (path: string, options: Options, toc: Func) => ViewOptions;
+      generatePreviewOptions: (path: string, options: Options, toc: Func) => ViewOptions;
+      customGeneratePreviewOptions: (path: string, options: Options, toc: Func) => ViewOptions;
+    };
+  };
 };
 
-// MutationObserver のコールバック内
-function mountReferenced(container: HTMLElement): void {
-  if (container.dataset.referencedMounted === 'true') return;
-  container.dataset.referencedMounted = 'true';
-  const root = ReactDOM.createRoot(container);
-  root.render(React.createElement(ReferencedList, { pagePath: currentPagePath }));
+const activate = (): void => {
+  if (growiFacade == null || growiFacade.markdownRenderer == null) return;
+
+  let currentPagePath = '';
+  const { optionsGenerators } = growiFacade.markdownRenderer;
+
+  // view options に登録
+  const originalCustomViewOptions = optionsGenerators.customGenerateViewOptions;
+  optionsGenerators.customGenerateViewOptions = (...args) => {
+    currentPagePath = args[0];  // 第1引数がページパス
+    const options = originalCustomViewOptions
+      ? originalCustomViewOptions(...args)
+      : optionsGenerators.generateViewOptions(...args);
+    options.remarkPlugins.push(referencedPlugin as any);
+    return options;
+  };
+
+  // preview options にも登録（忘れずに）
+  const originalCustomPreviewOptions = optionsGenerators.customGeneratePreviewOptions;
+  optionsGenerators.customGeneratePreviewOptions = (...args) => {
+    const preview = originalCustomPreviewOptions
+      ? originalCustomPreviewOptions(...args)
+      : optionsGenerators.generatePreviewOptions(...args);
+    preview.remarkPlugins.push(referencedPlugin as any);
+    return preview;
+  };
+
+  // MutationObserver でコンポーネントをマウント
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (node.dataset.growiPluginReferenced === 'true') {
+          mountReferenced(node, currentPagePath);
+        }
+        for (const child of node.querySelectorAll<HTMLElement>('[data-growi-plugin-referenced="true"]')) {
+          mountReferenced(child, currentPagePath);
+        }
+      }
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+};
+
+const deactivate = (): void => {};
+
+// Growi のプラグインシステムへの登録（これがないと activate() が呼ばれない）
+if ((window as any).pluginActivators == null) {
+  (window as any).pluginActivators = {};
 }
+(window as any).pluginActivators[config.name] = { activate, deactivate };
 ```
 
 ### src/ReferencedList.tsx（Reactコンポーネント）
@@ -251,24 +298,30 @@ GET /_api/search
 - プラグインは Growi と同一ドメインで動作するため、ブラウザのセッションCookieが自動送信される
 - `fetch` で `credentials: 'same-origin'` を指定すれば認証は不要（access_token 不要）
 
-### レスポンス例
+### レスポンス例（実測値）
+
+**【重要】** `data` 配列の各要素は `{ data: PageData, meta: {} }` のネスト構造。
+`data[n].path` ではなく **`data[n].data.path`** にページパスが入る。
 
 ```json
 {
   "ok": true,
   "meta": {
-    "took": 34,
-    "total": 5,
-    "hitsCount": 5
+    "took": 11,
+    "total": 2,
+    "hitsCount": 2
   },
   "data": [
     {
-      "_id": "5a8b15576cf1e900242e0f43",
-      "path": "/user/john/memo",
-      "updatedAt": "2024-01-02T00:00:00.000Z",
-      "creator": { "username": "john" },
-      "revision": {
-        "body": "ページ本文..."
+      "data": {
+        "_id": "69760078476f0c2080a5d222",
+        "path": "/011_プロジェクト/MarkdownToHtml/001_index.html",
+        "updatedAt": "2026-01-25T11:43:32.386Z",
+        "creator": { "username": "jun" }
+      },
+      "meta": {
+        "bookmarkCount": 0,
+        "elasticSearchResult": { "snippet": "..." }
       }
     }
   ]
@@ -289,8 +342,10 @@ const res = await fetch(`/_api/search?q=${query}&limit=50`, {
   credentials: 'same-origin',
 });
 const json = await res.json();
-// json.data にヒットしたページの配列
-// json.data.filter(p => p.path !== pagePath) で自分自身を除外
+// json.data[n].data.path にページパスが入る（ネスト構造に注意）
+const pages = json.data
+  .map((item) => item.data)          // ← ネストを解除
+  .filter((p) => p.path !== pagePath); // 自分自身を除外
 ```
 
 ---
@@ -351,3 +406,6 @@ export interface ViewOptions {
 4. **検索結果から自分自身を除外** - path で比較してフィルタ
 5. **Elasticsearch 未設定の場合** - エラーハンドリングで「検索サービス未設定」を表示
 6. **ビルド後に git push** - `npm run build` → `git add .` → `git push`
+7. **【動作確認済み】activate() の登録** - `export function activate()` では動かない。`window.pluginActivators[config.name] = { activate, deactivate }` で登録する
+8. **【動作確認済み】optionsGenerators のアクセス先** - `window.optionsGenerators` は存在しない。`growiFacade.markdownRenderer.optionsGenerators` が正しい
+9. **【動作確認済み】Search API のレスポンス構造** - `data[n]` は `{ data: PageData, meta: {} }` のネスト。`data[n].path` ではなく `data[n].data.path`

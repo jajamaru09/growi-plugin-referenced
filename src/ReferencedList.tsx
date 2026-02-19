@@ -30,15 +30,17 @@ export function ReferencedList({ pagePath }: ReferencedListProps): React.ReactEl
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('[growi-plugin-referenced] ReferencedList mounted, pagePath:', pagePath);
+    // ページIDはURLのパス部分（http://host/<pageId> の pageId）から取得する
+    const pageId = window.location.pathname.slice(1);
+    console.log('[growi-plugin-referenced] ReferencedList mounted, pagePath:', pagePath, 'pageId:', pageId);
 
-    if (!pagePath) {
+    if (!pageId) {
       setLoading(false);
-      setError('ページパスを取得できませんでした。');
+      setError('Could not get page ID from URL.');
       return;
     }
 
-    const query = encodeURIComponent(`"${pagePath}"`);
+    const query = encodeURIComponent(`"${pageId}"`);
     const url = `/_api/search?q=${query}&limit=50`;
     console.log('[growi-plugin-referenced] fetching:', url);
     fetch(url, {
@@ -57,7 +59,7 @@ export function ReferencedList({ pagePath }: ReferencedListProps): React.ReactEl
         }
         const filtered = json.data
           .map((item) => item.data)
-          .filter((p) => p.path !== pagePath);
+          .filter((p) => p._id !== pageId);
         console.log('[growi-plugin-referenced] filtered pages:', filtered);
         setPages(filtered);
       })
